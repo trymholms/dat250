@@ -8,13 +8,13 @@ from pathlib import Path
 #import os
 from flask import flash, redirect, render_template, send_from_directory, url_for, session
 #from datetime import datetime
-
+from werkzeug.security import generate_password_hash, check_password_hash
 from app.forms import CommentsForm, FriendsForm, IndexForm, PostForm, ProfileForm
 #from app.database import SQLite3
 #from werkzeug.utils import secure_filename
 import time
 from functools import wraps
-import bcrypt
+
 import re
 from app import app, sqlite
 
@@ -81,22 +81,11 @@ def index():
         user = sqlite.select_user_by_username(username)
         
 
-        if not login_form.password.data:
-             flash("Sorry, failed to log in", category="warning")
-             return redirect(url_for("index"))
-        hashed_password = bcrypt.hashpw(login_form.password.data.encode('utf-8'), user["password"].encode('utf-8')).decode('utf-8')
-
-        if user is None or user["password"] != hashed_password:
-            flash("Sorry, failed to log in, Error: 1", category="warning")
-
-            if username in failed_login_attempts:
-                attempts, last_attempt_time = failed_login_attempts[username]
-                failed_login_attempts[username] = (attempts + 1, time.time())
-            else:
-                failed_login_attempts[username] = (1, time.time())
-
-        elif user["password"] == hashed_password:
-            failed_login_attempts.pop(username, None)
+        if user is None:
+            flash("Sorry, this user does not exist!", category="warning")
+        elif not check_password_hash(user["password"], login_form.password.data):
+            flash("Sorry, wrong password!", category="warning")
+        else:
             session['username'] = username
             return redirect(url_for("stream", username=session['username']))
 
@@ -110,7 +99,7 @@ def index():
             return render_template("index.html.j2", title="Welcome", form=index_form)
 
         # Sanitize user input
-        hashed_password = bcrypt.hashpw(register_form.password.data.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        hashed_password = generate_password_hash(register_form.password.data)
         
         sanitized_username = sanitize_input(register_form.username.data, 'username')
         sanitized_first_name = sanitize_input(register_form.first_name.data, 'first name')

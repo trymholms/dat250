@@ -107,42 +107,18 @@ class SQLite3:
             conn.row_factory = sqlite3.Row
         return conn
 
-    def query(self, query: str, one: bool = False, *args) -> Any:
-        """Queries the database and returns the result.'
-
-        params:
-            query: The SQL query to execute.
-            one: Whether to return a single row or a list of rows.
-            args: Additional arguments to pass to the query.
-
-        returns: A single row, a list of rows or None.
-
-        """
-        cursor = self.connection.execute(query, args)
-        response = cursor.fetchone() if one else cursor.fetchall()
+    def query(self, query: str, one: bool = False, params: tuple = ()) -> Any:
+        cursor = self.connection.cursor()
+        cursor.execute(query, params)
+        
+        if one:
+            response = cursor.fetchone()
+        else:
+            response = cursor.fetchall()
+        
         cursor.close()
         self.connection.commit()
         return response
-
-    def get_user(self, username: str) -> Optional[sqlite3.Row]:
-        query = "SELECT * FROM Users WHERE username = ?;"
-        user = self.query(query, True, (username,))
-        return user
-    # TODO: Add more specific query methods to simplify code
-    
-    def insert_post(self, u_id, content, image, creation_time):
-        query = """
-            INSERT INTO Posts (u_id, content, image, creation_time)
-            VALUES (?, ?, ?, ?);
-        """
-        self.query(query, u_id, content, image, creation_time)
-
-    def insert_user(self, username, first_name, last_name, password):
-        query = """
-            INSERT INTO Users (username, first_name, last_name, password)
-            VALUES (?, ?, ?, ?);
-        """
-        self.query(query, username, first_name, last_name, password)
 
     def select_user_by_username(self, username: str) -> Any:
         query = "SELECT * FROM Users WHERE username = ?;"

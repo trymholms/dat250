@@ -22,6 +22,8 @@
               <div class="mb-3 form-check form-check-inline">
                 {{ form.login.remember_me(class_="form-check-input") }} {{ form.login.remember_me.label(class_="form-check-label") }}
               </div>
+              <div class="g-recaptcha" required data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
+              <script src="https://www.google.com/recaptcha/api.js" async defer></script>
               <div>{{ form.login.submit(class_="btn btn-primary") }}</div>
             </form>
           </div>
@@ -40,6 +42,8 @@
               <div class="mb-3">{{ form.register.username(class_="form-control") }}</div>
               <div class="mb-3">{{ form.register.password(class_="form-control") }}</div>
               <div class="mb-3">{{ form.register.confirm_password(class_="form-control") }}</div>
+              <div class="g-recaptcha" required data-sitekey="6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI"></div>
+              <script src="https://www.google.com/recaptcha/api.js" async defer></script>
               <div>{{ form.register.submit(class_="btn btn-primary") }}</div>
             </form>
           </div>
