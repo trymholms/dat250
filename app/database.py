@@ -124,7 +124,55 @@ class SQLite3:
         self.connection.commit()
         return response
 
+    def get_user(self, username: str) -> Optional[sqlite3.Row]:
+        query = "SELECT * FROM Users WHERE username = ?;"
+        user = self.query(query, True, (username,))
+        return user
     # TODO: Add more specific query methods to simplify code
+    
+    def insert_post(self, u_id, content, image, creation_time):
+        query = """
+            INSERT INTO Posts (u_id, content, image, creation_time)
+            VALUES (?, ?, ?, ?);
+        """
+        self.query(query, u_id, content, image, creation_time)
+
+    def insert_user(self, username, first_name, last_name, password):
+        query = """
+            INSERT INTO Users (username, first_name, last_name, password)
+            VALUES (?, ?, ?, ?);
+        """
+        self.query(query, username, first_name, last_name, password)
+
+    def select_user_by_username(self, username: str) -> Any:
+        query = "SELECT * FROM Users WHERE username = ?;"
+        return self.query(query, one=True, params=(username,))
+    
+    def register_user(self, username: str, first_name: str, last_name: str, password: str) -> None:
+        # Sanitize user input
+
+        query = "INSERT INTO Users (username, first_name, last_name, password) VALUES (?, ?, ?, ?);"
+        params = (username, first_name, last_name, password)
+
+        self.query(query, params=params)
+
+    def insert_comment(self, post_id: int, user_id: int, comment: str) -> None:
+        query = """
+            INSERT INTO Comments (p_id, u_id, comment, creation_time)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP);
+        """
+        params = (post_id, user_id, comment)
+        self.query(query, params=params)
+
+
+    def insert_post(self, user_id: int, content: str, image_filename: str) -> None:
+        query = """
+            INSERT INTO Posts (u_id, content, image, creation_time)
+            VALUES (?, ?, ?, CURRENT_TIMESTAMP);
+        """
+        params = (user_id, content, image_filename)
+        self.query(query, params=params)
+
 
     def _init_database(self, schema: PathLike | str) -> None:
         """Initializes the database with the supplied schema if it does not exist yet."""

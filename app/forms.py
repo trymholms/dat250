@@ -16,8 +16,10 @@ Example:
     """
 
 from datetime import datetime
+from flask import request, make_response
 from typing import cast
-
+from wtforms.validators import InputRequired, Length, EqualTo, DataRequired, Regexp
+"""from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user"""
 from flask_wtf import FlaskForm
 from wtforms import (
     BooleanField,
@@ -30,6 +32,7 @@ from wtforms import (
     TextAreaField,
 )
 
+
 # Defines all forms in the application, these will be instantiated by the template,
 # and the routes.py will read the values of the fields
 
@@ -38,6 +41,15 @@ from wtforms import (
 # TODO: There was some important security feature that wtforms provides, but I don't remember what; implement it
 
 
+"""
+login_manager = LoginManager()
+login_manager.init_app(app)
+
+
+def load_user(user_id):
+    # Load the user from your database
+    return User.query.get(int(user_id))
+"""
 class LoginForm(FlaskForm):
     """Provides the login form for the application."""
 
@@ -48,14 +60,23 @@ class LoginForm(FlaskForm):
     )  # TODO: It would be nice to have this feature implemented, probably by using cookies
     submit = SubmitField(label="Sign In")
 
+def remember_user(self):
+    if self.remember_me.data:
+        username = self.username.data
+        response = make_response()
+        response.set_cookie("remember_me", username, max_age=3600 * 24 * 30) 
+
+def get_remembered_user():
+        return request.cookies.get("remember_me", "")
 
 class RegisterForm(FlaskForm):
     """Provides the registration form for the application."""
 
-    first_name = StringField(label="First Name", render_kw={"placeholder": "First Name"})
-    last_name = StringField(label="Last Name", render_kw={"placeholder": "Last Name"})
-    username = StringField(label="Username", render_kw={"placeholder": "Username"})
-    password = PasswordField(label="Password", render_kw={"placeholder": "Password"})
+    first_name = StringField(label="First Name", render_kw={"placeholder": "First Name"},validators=[InputRequired()])
+    last_name = StringField(label="Last Name", render_kw={"placeholder": "Last Name"},validators=[InputRequired()])
+    username = StringField(label="Username", render_kw={"placeholder": "Username"},validators=[InputRequired(),Length(min=4,max=25)])
+    password = PasswordField(label="Password", render_kw={"placeholder": "Password"},validators=[DataRequired(),EqualTo('confirm_password', message='Passwords must match'), Regexp(r'^(?=.*[A-Z])(?=.*\d)(?=.*[a-z]).{8,}$',
+                message='Password must contain at least one uppercase letter, one digit, and be at least 8 characters long.')])
     confirm_password = PasswordField(label="Confirm Password", render_kw={"placeholder": "Confirm Password"})
     submit = SubmitField(label="Sign Up")
 

@@ -10,11 +10,12 @@ from app.database import SQLite3
 
 # from flask_login import LoginManager
 # from flask_bcrypt import Bcrypt
-# from flask_wtf.csrf import CSRFProtect
+from flask_wtf.csrf import CSRFProtect
 
 # Instantiate and configure the app
 app = Flask(__name__)
 app.config.from_object(Config)
+secret_key = app.config["SECRET_KEY"]
 
 # Instantiate the sqlite database extension
 sqlite = SQLite3(app, schema="schema.sql")
@@ -26,7 +27,7 @@ sqlite = SQLite3(app, schema="schema.sql")
 # bcrypt = Bcrypt(app)
 
 # TODO: The CSRF protection is not working, I should probably fix that
-# csrf = CSRFProtect(app)
+csrf = CSRFProtect(app)
 
 # Create the instance and upload folder if they do not exist
 with app.app_context():

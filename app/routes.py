@@ -5,100 +5,170 @@ It also contains the SQL queries used for communicating with the database.
 """
 
 from pathlib import Path
+#import os
+from flask import flash, redirect, render_template, send_from_directory, url_for, session
+#from datetime import datetime
 
-from flask import flash, redirect, render_template, send_from_directory, url_for
-
-from app import app, sqlite
 from app.forms import CommentsForm, FriendsForm, IndexForm, PostForm, ProfileForm
+#from app.database import SQLite3
+#from werkzeug.utils import secure_filename
+import time
+from functools import wraps
+import bcrypt
+import re
+from app import app, sqlite
 
+#db = SQLite3(app)
+
+def escape(t):
+    t = t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("'", "&#39;").replace('"', "&quot;")
+    return t
+
+def allowed_file(filename):
+    allowed_extensions = app.config.get('ALLOWED_EXTENSIONS', [])
+    if not allowed_extensions:
+        return False
+    file_extension = filename.rsplit('.', 1)[1].lower() if '.' in filename else ''
+    return file_extension in allowed_extensions
+
+def check_failed_attempts(username):
+    if username in failed_login_attempts:
+        attempts, last_attempt_time = failed_login_attempts[username]
+        lockout_duration = 300  # Lockout duration in seconds
+
+        if attempts >= 3 and (time.time() - last_attempt_time) < lockout_duration:
+            flash("Account temporarily locked due to multiple failed login attempts. Try again later.", category="danger")
+            return True
+
+    return False
+
+
+def sanitize_input(input_str, field):
+    # Remove characters that are not allowed in usernames and names
+    sanitized_str = re.sub(r"[^a-zA-Z0-9@!$%*?&\s]", "", input_str)
+
+    # Check if any characters were removed and inform the user
+    if sanitized_str != input_str:
+        flash(f"Some characters in your input were removed due to invalid characters in {field}.", category="warning")
+        return False 
+    return sanitized_str
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'username' not in session or session['username'] != kwargs.get('username'):
+            flash("You are not authorized to access this page.", category="danger")
+            return redirect(url_for("index"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+failed_login_attempts = {}
 
 @app.route("/", methods=["GET", "POST"])
 @app.route("/index", methods=["GET", "POST"])
 def index():
-    """Provides the index page for the application.
-
-    It reads the composite IndexForm and based on which form was submitted,
-    it either logs the user in or registers a new user.
-
-    If no form was submitted, it simply renders the index page.
-    """
     index_form = IndexForm()
     login_form = index_form.login
     register_form = index_form.register
 
     if login_form.is_submitted() and login_form.submit.data:
-        get_user = f"""
-            SELECT *
-            FROM Users
-            WHERE username = '{login_form.username.data}';
-            """
-        user = sqlite.query(get_user, one=True)
+        username = login_form.username.data
 
-        if user is None:
-            flash("Sorry, this user does not exist!", category="warning")
-        elif user["password"] != login_form.password.data:
-            flash("Sorry, wrong password!", category="warning")
-        elif user["password"] == login_form.password.data:
-            return redirect(url_for("stream", username=login_form.username.data))
+        if check_failed_attempts(username):
+            return render_template("index.html.j2", title="Welcome", form=index_form)
+
+    
+        user = sqlite.select_user_by_username(username)
+        
+
+        if not login_form.password.data:
+             flash("Sorry, failed to log in", category="warning")
+             return redirect(url_for("index"))
+        hashed_password = bcrypt.hashpw(login_form.password.data.encode('utf-8'), user["password"].encode('utf-8')).decode('utf-8')
+
+        if user is None or user["password"] != hashed_password:
+            flash("Sorry, failed to log in, Error: 1", category="warning")
+
+            if username in failed_login_attempts:
+                attempts, last_attempt_time = failed_login_attempts[username]
+                failed_login_attempts[username] = (attempts + 1, time.time())
+            else:
+                failed_login_attempts[username] = (1, time.time())
+
+        elif user["password"] == hashed_password:
+            failed_login_attempts.pop(username, None)
+            session['username'] = username
+            return redirect(url_for("stream", username=session['username']))
+
+        return render_template("index.html.j2", title="Welcome", form=index_form)
 
     elif register_form.is_submitted() and register_form.submit.data:
-        insert_user = f"""
-            INSERT INTO Users (username, first_name, last_name, password)
-            VALUES ('{register_form.username.data}', '{register_form.first_name.data}', '{register_form.last_name.data}', '{register_form.password.data}');
-            """
-        sqlite.query(insert_user)
+        # Check if the password meets the strong password 
+        strong_password_pattern = r"^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$"
+        if not re.match(strong_password_pattern, register_form.password.data):
+            flash("Password does not meet the strong password criteria. It should contain at least one uppercase letter, one lowercase letter, one digit, one special character (@, $, !, %, *, ?, or &), and be at least 8 characters long.", category="danger")
+            return render_template("index.html.j2", title="Welcome", form=index_form)
+
+        # Sanitize user input
+        hashed_password = bcrypt.hashpw(register_form.password.data.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        
+        sanitized_username = sanitize_input(register_form.username.data, 'username')
+        sanitized_first_name = sanitize_input(register_form.first_name.data, 'first name')
+        sanitized_last_name = sanitize_input(register_form.last_name.data, 'last name')
+        
+        if sanitized_username is False or sanitized_first_name is False or sanitized_last_name is False:
+            flash("User registration failed due to invalid input.", category="danger")
+            return render_template("index.html.j2", title="Welcome", form=index_form)
+
+        sqlite.register_user(sanitized_username,sanitized_first_name, sanitized_last_name, hashed_password)
+
         flash("User successfully created!", category="success")
         return redirect(url_for("index"))
 
+
     return render_template("index.html.j2", title="Welcome", form=index_form)
 
-
 @app.route("/stream/<string:username>", methods=["GET", "POST"])
+@login_required
 def stream(username: str):
-    """Provides the stream page for the application.
+    if 'username' in session:
+        """Provides the stream page for the application.
 
-    If a form was submitted, it reads the form data and inserts a new post into the database.
+        If a form was submitted, it reads the form data and inserts a new post into the database.
 
-    Otherwise, it reads the username from the URL and displays all posts from the user and their friends.
-    """
-    post_form = PostForm()
-    get_user = f"""
-        SELECT *
-        FROM Users
-        WHERE username = '{username}';
+        Otherwise, it reads the username from the URL and displays all posts from the user and their friends.
         """
-    user = sqlite.query(get_user, one=True)
-
-    if post_form.is_submitted():
-        if post_form.image.data:
-            path = Path(app.instance_path) / app.config["UPLOADS_FOLDER_PATH"] / post_form.image.data.filename
-            post_form.image.data.save(path)
-
-        insert_post = f"""
-            INSERT INTO Posts (u_id, content, image, creation_time)
-            VALUES ({user["id"]}, '{post_form.content.data}', '{post_form.image.data.filename}', CURRENT_TIMESTAMP);
+        post_form = PostForm()
+        get_user = f"""
+            SELECT *
+            FROM Users
+            WHERE username = '{username}';
             """
-        sqlite.query(insert_post)
-        return redirect(url_for("stream", username=username))
+        user = sqlite.query(get_user, one=True)
 
-    get_posts = f"""
-         SELECT p.*, u.*, (SELECT COUNT(*) FROM Comments WHERE p_id = p.id) AS cc
-         FROM Posts AS p JOIN Users AS u ON u.id = p.u_id
-         WHERE p.u_id IN (SELECT u_id FROM Friends WHERE f_id = {user["id"]}) OR p.u_id IN (SELECT f_id FROM Friends WHERE u_id = {user["id"]}) OR p.u_id = {user["id"]}
-         ORDER BY p.creation_time DESC;
-        """
-    posts = sqlite.query(get_posts)
-    return render_template("stream.html.j2", title="Stream", username=username, form=post_form, posts=posts)
+        if post_form.is_submitted():
+            if post_form.image.data:
+                path = Path(app.instance_path) / app.config["UPLOADS_FOLDER_PATH"] / post_form.image.data.filename
+                post_form.image.data.save(path)
 
+            sanitizzed_content = sanitize_input(post_form.content.data, "posting")
 
+            sqlite.insert_post(user["id"], sanitizzed_content, post_form.image.data.filename)
+
+            return redirect(url_for("stream", username=session['username']))
+
+        get_posts = f"""
+            SELECT p.*, u.*, (SELECT COUNT(*) FROM Comments WHERE p_id = p.id) AS cc
+            FROM Posts AS p JOIN Users AS u ON u.id = p.u_id
+            WHERE p.u_id IN (SELECT u_id FROM Friends WHERE f_id = {user["id"]}) OR p.u_id IN (SELECT f_id FROM Friends WHERE u_id = {user["id"]}) OR p.u_id = {user["id"]}
+            ORDER BY p.creation_time DESC;
+            """
+        posts = sqlite.query(get_posts)
+        return render_template("stream.html.j2", title="Stream", username=session['username'], form=post_form, posts=posts)
+    
 @app.route("/comments/<string:username>/<int:post_id>", methods=["GET", "POST"])
+@login_required
 def comments(username: str, post_id: int):
-    """Provides the comments page for the application.
-
-    If a form was submitted, it reads the form data and inserts a new comment into the database.
-
-    Otherwise, it reads the username and post id from the URL and displays all comments for the post.
-    """
     comments_form = CommentsForm()
     get_user = f"""
         SELECT *
@@ -108,11 +178,7 @@ def comments(username: str, post_id: int):
     user = sqlite.query(get_user, one=True)
 
     if comments_form.is_submitted():
-        insert_comment = f"""
-            INSERT INTO Comments (p_id, u_id, comment, creation_time)
-            VALUES ({post_id}, {user["id"]}, '{comments_form.comment.data}', CURRENT_TIMESTAMP);
-            """
-        sqlite.query(insert_comment)
+        sqlite.insert_comment(post_id, user["id"], comments_form.comment.data)
 
     get_post = f"""
         SELECT *
@@ -130,7 +196,6 @@ def comments(username: str, post_id: int):
     return render_template(
         "comments.html.j2", title="Comments", username=username, form=comments_form, post=post, comments=comments
     )
-
 
 @app.route("/friends/<string:username>", methods=["GET", "POST"])
 def friends(username: str):
@@ -215,7 +280,20 @@ def profile(username: str):
     return render_template("profile.html.j2", title="Profile", username=username, user=user, form=profile_form)
 
 
-@app.route("/uploads/<string:filename>")
+
+@app.route("/uploads/<string:filename>", endpoint="uploads")
 def uploads(filename):
     """Provides an endpoint for serving uploaded files."""
     return send_from_directory(Path(app.instance_path) / app.config["UPLOADS_FOLDER_PATH"], filename)
+
+
+@app.route('/logout', methods=['GET', 'POST'])
+def logout():
+    if 'username' in session:
+        # Clear the user's session data to log them out
+        session.pop('username', None)
+        flash("You have been logged out successfully.", category="success")
+    else:
+        flash("You were never logged in...", category="danger")
+
+    return redirect(url_for('index'))
